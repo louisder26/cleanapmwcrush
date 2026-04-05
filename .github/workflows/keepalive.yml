@@ -1,0 +1,19 @@
+name: Keep Alive
+
+on:
+  schedule:
+    - cron: '0 12 1 * *'  # le 1er de chaque mois à midi
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping
+        run: |
+          git config user.email "bot@apmw.be"
+          git config user.name "APMW Bot"
+          echo "keepalive $(date)" > keepalive.txt
+          git add keepalive.txt
+          git commit -m "keepalive"
+          git push
