@@ -1,0 +1,6 @@
+services:
+  - type: worker
+    name: apmw-moderateur
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python moderateur.py
