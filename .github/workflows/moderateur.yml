@@ -1,0 +1,28 @@
+name: Modérateur APMW
+
+on:
+  schedule:
+    - cron: '* * * * *'  # se lance toutes les minutes
+  workflow_dispatch:      # permet aussi un lancement manuel
+
+jobs:
+  moderer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Lancer le modérateur
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python moderateur.py
