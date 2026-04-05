@@ -1,28 +1,29 @@
+import os
 import time
 import re
 from supabase import create_client
 
 # ── CONFIG ──────────────────────────────────────────────
-SUPABASE_URL = "https://wcnssxmdfmmekcolragv.supabase.co"
-SUPABASE_KEY = "sb_publishable_B9bjLjlywOjkHxbwXtAyWw_u-k3FTJt"  # remplace par ta service_role key !
-INTERVALLE   = 1  # secondes entre chaque scan
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+DUREE        = 55   # secondes avant arrêt propre
+INTERVALLE   = 2    # scan toutes les 2 secondes
 
-# ── LISTE D'INSULTES ─────────────────────────────────────
-# Ajoute / retire des mots selon tes besoins
+# ── LISTE D'INSULTES ────────────────────────────────────
 INSULTES = [
     # français
     "connard", "connasse", "salope", "pute", "putain", "enculé", "enculer",
     "merde", "fils de pute", "fdp", "batard", "bâtard", "nique", "niquer",
     "trou du cul", "trouduc", "branler", "branleur", "con", "conne",
     "pd", "pédé", "tapette", "gouine", "raciste", "nazi", "suicide",
-    "crève", "crever", "mort", "tuer", "tues", "viol", "violer",
+    "crève", "crever", "tuer", "tues", "viol", "violer",
     "grosse vache", "gros con", "idiot", "imbécile", "débile",
-    # anglais basique
+    # anglais
     "fuck", "shit", "bitch", "asshole", "bastard", "whore", "slut",
     "dick", "cock", "pussy", "cunt", "nigger", "faggot", "retard",
 ]
 
-# Pré-compilation : mot entier, insensible à la casse, ignore accents via unicode
+# Pré-compilation des patterns regex
 PATTERNS = [
     re.compile(r'\b' + re.escape(mot) + r'\b', re.IGNORECASE | re.UNICODE)
     for mot in INSULTES
@@ -31,8 +32,8 @@ PATTERNS = [
 # ── CLIENT SUPABASE ──────────────────────────────────────
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ── LOGIQUE ──────────────────────────────────────────────
-def contient_insulte(texte: str) -> bool:
+# ── FONCTIONS ────────────────────────────────────────────
+def contient_insulte(texte):
     if not texte:
         return False
     for pattern in PATTERNS:
@@ -40,36 +41,35 @@ def contient_insulte(texte: str) -> bool:
             return True
     return False
 
-def champs_a_verifier(row: dict) -> list[str]:
-    """Retourne les noms des champs qui contiennent une insulte."""
-    champs = ["message", "crush_prenom", "sender_prenom", "sender_nom", "sender_classe"]
-    return [c for c in champs if contient_insulte(row.get(c, "") or "")]
-
 def scanner_et_supprimer():
-    res = db.table("crushes").select("id, message, crush_prenom, sender_prenom, sender_nom, sender_classe").execute()
+    res = db.table("crushes").select(
+        "id, message, crush_prenom, sender_prenom, sender_nom, sender_classe"
+    ).execute()
     rows = res.data or []
 
-    a_supprimer = [row["id"] for row in rows if champs_a_verifier(row)]
+    ids_a_supprimer = [
+        row["id"] for row in rows
+        if any(
+            contient_insulte(row.get(champ) or "")
+            for champ in ["message", "crush_prenom", "sender_prenom", "sender_nom", "sender_classe"]
+        )
+    ]
 
-    if not a_supprimer:
-        return 0
+    if ids_a_supprimer:
+        db.table("crushes").delete().in_("id", ids_a_supprimer).execute()
+        print(f"❌ {len(ids_a_supprimer)} message(s) supprimé(s)")
+    else:
+        print("✅ RAS")
 
-    db.table("crushes").delete().in_("id", a_supprimer).execute()
-    return len(a_supprimer)
+    return len(ids_a_supprimer)
 
 # ── BOUCLE PRINCIPALE ────────────────────────────────────
-print("🛡️  Modérateur démarré — scan toutes les secondes")
-print(f"   {len(INSULTES)} mots surveillés\n")
-
+debut = time.time()
 total = 0
-try:
-    while True:
-        supprimes = scanner_et_supprimer()
-        if supprimes:
-            total += supprimes
-            print(f"[{time.strftime('%H:%M:%S')}] ❌ {supprimes} message(s) supprimé(s)  |  total : {total}")
-        else:
-            print(f"[{time.strftime('%H:%M:%S')}] ✅ RAS", end="\r")
-        time.sleep(INTERVALLE)
-except KeyboardInterrupt:
-    print(f"\n\nArrêt. {total} message(s) supprimé(s) au total.")
+print("🛡️  Modérateur démarré")
+
+while time.time() - debut < DUREE:
+    total += scanner_et_supprimer()
+    time.sleep(INTERVALLE)
+
+print(f"⏹️  Arrêt propre — {total} message(s) supprimé(s) cette session")
